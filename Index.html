@@ -1,0 +1,201 @@
+<html>
+
+<head>
+<style>
+#content {
+  display: none;
+}
+.video { 
+  border: solid 3px #000;
+  width: 650px;
+}
+.buttons {
+  border: solid 5px #fff;
+  width: 100px;
+  height: 50px;
+  background-color: #000;
+  color: #fff;
+  border-radius: 10px;
+  cursor: pointer;
+}
+.buttons:hover { opacity: 0.7; }
+#playbtn,#downloadbtn { cursor: not-allowed; opacity: 0.5;}
+</style>
+</head>
+
+<body>
+<div class="layout">
+  <div>
+    <video class="video previewcss" id="preview" autoplay muted></video><div id="content"><video class="video playercss" id="player" loop controls></video></div>
+    <div class="_buttons_">
+      <button class="buttons clsrcdbtn" id="recordbtn" disabled>Start</button>
+      <button class="buttons clsplybtn" id="playbtn" disabled>Play</button>
+      <button class="buttons clsdwndbtn" id="downloadbtn" disabled>Download</button>
+    </div>
+  </div>
+  <div id="content">
+    
+  </div>
+</div>
+</body>
+
+<script>
+/* Resouces:- 
+-https://codepen.io/nirmalyaghosh/pen/XVBWxZ?editors=0010
+-https://developer.mozilla.org/en-US/docs/Web/API/Screen_Capture_API/Using_Screen_Capture
+-https://developer.mozilla.org/en-US/docs/Web/API/MediaStream_Recording_API/Recording_a_media_element
+*/
+'use strict';
+//Inro
+window.alert("Hello.Welcome to screen recorder.");
+window.alert("Choose a screen what you want to share then inf you want record audio click audio button and click share.");
+/* globals MediaRecorder */
+ 
+var mediaSource = new MediaSource();
+mediaSource.addEventListener('sourceopen', handleSourceOpen, false);
+var mediaRecorder;
+var recordedBlobs;
+var sourceBuffer;
+
+var gumVideo = document.querySelector('video#preview');
+var recordedVideo = document.querySelector('video#player');
+
+var recordButton = document.querySelector('button#recordbtn');
+var playButton = document.querySelector('button#playbtn');
+var downloadButton = document.querySelector('button#downloadbtn');
+recordButton.onclick = toggleRecording;
+playButton.onclick = play;
+downloadButton.onclick = download;
+
+var constraints = {
+  audio: true,
+  video: true
+};
+
+function handleSuccess(stream) {
+  recordButton.disabled = false;
+  console.log('getUserMedia() got stream: ', stream);
+  window.stream = stream;
+  gumVideo.srcObject = stream;
+}
+function handleError(error) {
+  console.log('navigator.getUserMedia error: ', error);
+  if (error.name === "NotAllowedError") {
+    alert(`You need to allow access to your screen and audio for this project.`); 
+    location.reload();
+  }
+}
+navigator.mediaDevices.getDisplayMedia(constraints).then(handleSuccess).catch(handleError);
+
+function handleSourceOpen(event) {
+  console.log('MediaSource opened');
+  sourceBuffer = mediaSource.addSourceBuffer('video/mp4; codecs="vp8"');
+  console.log('Source buffer: ', sourceBuffer);
+}
+
+recordedVideo.addEventListener('error', function(ev) {
+  console.error('MediaRecording.recordedMedia.error()');
+  alert('Your browser can not play\n\n' + recordedVideo.src
+    + '\n\n media clip. event: ' + JSON.stringify(ev));
+}, true);
+
+function handleDataAvailable(event) {
+  if (event.data && event.data.size > 0) {
+    recordedBlobs.push(event.data);
+  }
+}
+
+function handleStop(event) {
+  console.log('Recorder stopped: ', event);
+}
+
+function toggleRecording() {
+  if (recordButton.textContent === 'Start') {
+    startRecording();
+  } else {
+    stopRecording();
+    recordButton.textContent = 'Start';
+    playButton.disabled = false;
+    downloadButton.disabled = false;
+  }
+}
+
+function startRecording() {
+  recordedBlobs = [];
+  var options = {mimeType: 'video/mp4;codecs=vp9'};
+  if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+    console.log(options.mimeType + ' is not Supported');
+    options = {mimeType: 'video/mp4;codecs=vp8'};
+    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+      console.log(options.mimeType + ' is not Supported');
+      options = {mimeType: 'video/mp4'};
+      if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+        console.log(options.mimeType + ' is not Supported');
+        options = {mimeType: ''};
+      }
+    }
+  }
+  try {
+    mediaRecorder = new MediaRecorder(window.stream, options);
+  } catch (e) {
+    console.error('Exception while creating MediaRecorder: ' + e);
+    alert('Exception while creating MediaRecorder: '
+      + e + '. mimeType: ' + options.mimeType);
+    return;
+  }
+  console.log('Created MediaRecorder', mediaRecorder, 'with options', options);
+  recordButton.textContent = 'Stop';
+  playButton.disabled = true;
+  downloadButton.disabled = true;
+  mediaRecorder.onstop = handleStop;
+  mediaRecorder.ondataavailable = handleDataAvailable;
+  mediaRecorder.start(10); // collect 10ms of data
+  console.log('MediaRecorder started', mediaRecorder);
+}
+
+function stopRecording() {
+  mediaRecorder.stop();
+  console.log('Recorded Blobs: ', recordedBlobs);
+  recordedVideo.controls = true;
+  document.getElementById("downloadbtn").style.opacity = "1";
+  document.getElementById("downloadbtn").style.cursor = "pointer";
+  document.getElementById("playbtn").style.opacity = "1";
+  document.getElementById("playbtn").style.cursor = "pointer";
+}
+
+function play() {
+  var superBuffer = new Blob(recordedBlobs, {type: 'video/mp4'});
+  recordedVideo.src = window.URL.createObjectURL(superBuffer);
+  // workaround for non-seekable video taken from
+  // https://bugs.chromium.org/p/chromium/issues/detail?id=642012#c23
+  recordedVideo.addEventListener('loadedmetadata', function() {
+    if (recordedVideo.duration === Infinity) {
+      recordedVideo.currentTime = 1e101;
+      recordedVideo.ontimeupdate = function() {
+        recordedVideo.currentTime = 0;
+        recordedVideo.ontimeupdate = function() {
+          delete recordedVideo.ontimeupdate;
+          document.getElementById('content').style.display = "inline-block";
+          recordedVideo.play();
+        };
+      };
+    }
+  });
+}
+
+function download() {
+  var blob = new Blob(recordedBlobs, {type: 'video/mp4'});
+  var url = window.URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.style.display = 'none';
+  a.href = url;
+  a.download = 'test.mp4';
+  document.body.appendChild(a);
+  a.click();
+  setTimeout(function() {
+    document.body.removeChild(a);
+    window.URL.revokeObjectURL(url);
+  }, 100);
+}
+</script>
+</html>
